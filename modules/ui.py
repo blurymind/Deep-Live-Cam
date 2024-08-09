@@ -10,7 +10,7 @@ import modules.metadata
 from modules.face_analyser import get_one_face
 from modules.capturer import get_video_frame, get_video_frame_total
 from modules.processors.frame.core import get_frame_processors_modules
-from modules.utilities import is_image, is_video, resolve_relative_path
+from modules.utilities import is_image, is_video, resolve_relative_path, suggest_output_file_name
 
 ROOT = None
 ROOT_HEIGHT = 700
@@ -151,7 +151,7 @@ def select_source_path() -> None:
         modules.globals.source_path = source_path
         RECENT_DIRECTORY_SOURCE = os.path.dirname(modules.globals.source_path)
         image = render_image_preview(modules.globals.source_path, (200, 200))
-        source_label.configure(image=image)
+        source_label.configure(image=None)
     else:
         modules.globals.source_path = None
         source_label.configure(image=None)
@@ -161,7 +161,7 @@ def select_target_path() -> None:
     global RECENT_DIRECTORY_TARGET, img_ft, vid_ft
 
     PREVIEW.withdraw()
-    target_path = ctk.filedialog.askopenfilename(title='select an target image or video', initialdir=RECENT_DIRECTORY_TARGET, filetypes=[img_ft, vid_ft])
+    target_path = ctk.filedialog.askopenfilename(title='select an target image or video', initialdir=RECENT_DIRECTORY_TARGET, filetypes=[vid_ft, img_ft])
     if is_image(target_path):
         modules.globals.target_path = target_path
         RECENT_DIRECTORY_TARGET = os.path.dirname(modules.globals.target_path)
@@ -181,9 +181,9 @@ def select_output_path(start: Callable[[], None]) -> None:
     global RECENT_DIRECTORY_OUTPUT, img_ft, vid_ft
 
     if is_image(modules.globals.target_path):
-        output_path = ctk.filedialog.asksaveasfilename(title='save image output file', filetypes=[img_ft], defaultextension='.png', initialfile='output.png', initialdir=RECENT_DIRECTORY_OUTPUT)
+        output_path = ctk.filedialog.asksaveasfilename(title='save image output file', filetypes=[img_ft], defaultextension='.png', initialfile=suggest_output_file_name(modules.globals.target_path), initialdir=RECENT_DIRECTORY_OUTPUT)
     elif is_video(modules.globals.target_path):
-        output_path = ctk.filedialog.asksaveasfilename(title='save video output file', filetypes=[vid_ft], defaultextension='.mp4', initialfile='output.mp4', initialdir=RECENT_DIRECTORY_OUTPUT)
+        output_path = ctk.filedialog.asksaveasfilename(title='save video output file', filetypes=[vid_ft], defaultextension='.mp4', initialfile=suggest_output_file_name(modules.globals.target_path), initialdir=RECENT_DIRECTORY_OUTPUT)
     else:
         output_path = None
     if output_path:
@@ -233,6 +233,7 @@ def init_preview() -> None:
 
 
 def update_preview(frame_number: int = 0) -> None:
+    # pass
     if modules.globals.source_path and modules.globals.target_path:
         temp_frame = get_video_frame(modules.globals.target_path, frame_number)
         if modules.globals.nsfw == False:
@@ -248,20 +249,46 @@ def update_preview(frame_number: int = 0) -> None:
         image = ImageOps.contain(image, (PREVIEW_MAX_WIDTH, PREVIEW_MAX_HEIGHT), Image.LANCZOS)
         image = ctk.CTkImage(image, size=image.size)
         preview_label.configure(image=image)
+        
+
+def update_live_preview(frame_number: int, cap: cv2.VideoCapture) -> None:
+    cap.set(cv2.CAP_PROP_POS_FRAMES, frame_number)
 
 def webcam_preview():
     if modules.globals.source_path is None:
         # No image selected
         return
     
-    global preview_label, PREVIEW
+    global ROOT, preview_label, PREVIEW, preview_slider
+    
+    if modules.globals.target_path:
+        cap = cv2.VideoCapture(modules.globals.target_path)    
+        PREVIEW_MAX_WIDTH = cap.get(cv2.CAP_PROP_FRAME_WIDTH)
+        PREVIEW_MAX_HEIGHT = cap.get(cv2.CAP_PROP_FRAME_HEIGHT)
+        if PREVIEW_MAX_HEIGHT > 1060:
+            PREVIEW_MAX_HEIGHT = 540
+            PREVIEW_MAX_WIDTH = 960
 
-    cap = cv2.VideoCapture(0)  # Use index for the webcam (adjust the index accordingly if necessary)    
-    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 960)  # Set the width of the resolution
-    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 540)  # Set the height of the resolution
-    cap.set(cv2.CAP_PROP_FPS, 60)  # Set the frame rate of the webcam
-    PREVIEW_MAX_WIDTH = 960
-    PREVIEW_MAX_HEIGHT = 540
+        # cap.set(cv2.CAP_PROP_FRAME_WIDTH, PREVIEW_MAX_WIDTH)  # Set the width of the resolution
+        # cap.set(cv2.CAP_PROP_FRAME_HEIGHT, PREVIEW_MAX_HEIGHT)  # Set the height of the resolution
+        cap.set(cv2.CAP_PROP_FPS, 60)  # Set the frame rate of the webcam
+        # cap.set(cv2.CAP_PROP_FRAME_COUNT, 2)
+        # cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+        # cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter.fourcc('M', 'J', 'P', 'G'))
+
+        video_frame_total = get_video_frame_total(modules.globals.target_path)
+
+        preview_slider.configure(to=video_frame_total, command=lambda frame_value: update_live_preview(frame_value, cap))
+        preview_slider.pack(fill='x')
+        preview_slider.set(0)
+        
+    else:
+        cap = cv2.VideoCapture(0)
+        cap.set(cv2.CAP_PROP_FRAME_WIDTH, 960)  # Set the width of the resolution
+        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 540)  # Set the height of the resolution
+        cap.set(cv2.CAP_PROP_FPS, 80)  # Set the frame rate of the webcam
+        PREVIEW_MAX_WIDTH = 960
+        PREVIEW_MAX_HEIGHT = 540
 
     preview_label.configure(image=None)  # Reset the preview image before startup
 
